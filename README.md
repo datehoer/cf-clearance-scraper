@@ -30,7 +30,18 @@ docker run -d -p 3000:3000 \
 -e PORT=3000 \
 -e browserLimit=20 \
 -e timeOut=60000 \
+-e CLIENT_KEY=your_client_key \
 zfcsoftware/cf-clearance-scraper:latest
+```
+
+If `CLIENT_KEY` is set, each request must include the same key (recommended via `x-client-key` header), otherwise it returns 401.
+
+**Docker Compose**
+
+`docker-compose.yml` is included in this repo.
+
+```bash
+docker compose up -d
 ```
 
 **Github**
@@ -46,44 +57,13 @@ npm run start
 
 By creating a session as in the example, you can send multiple requests to the same site without being blocked. Since sites may have TLS protection, it is recommended to send requests with the library in the example.
 
-```js
-const initCycleTLS = require('cycletls');
-async function test() {
-    const session = await fetch('http://localhost:3000/cf-clearance-scraper', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            url: 'https://nopecha.com/demo/cloudflare',
-            mode: "waf-session",
-            // proxy:{
-            //     host: '127.0.0.1',
-            //     port: 3000,
-            //     username: 'username',
-            //     password: 'password'
-            // }
-        })
-    }).then(res => res.json()).catch(err => { console.error(err); return null });
+If you didn't set `CLIENT_KEY`, you can omit the `x-client-key` header in the examples below.
 
-    if (!session || session.code != 200) return console.error(session);
-
-    const cycleTLS = await initCycleTLS();
-    const response = await cycleTLS('https://nopecha.com/demo/cloudflare', {
-        body: '',
-        ja3: '772,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,23-27-65037-43-51-45-16-11-13-17513-5-18-65281-0-10-35,25497-29-23-24,0', // https://scrapfly.io/web-scraping-tools/ja3-fingerprint
-        userAgent: session.headers["user-agent"],
-        // proxy: 'http://username:password@hostname.com:443',
-        headers: {
-            ...session.headers,
-            cookie: session.cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
-        }
-    }, 'get');
-
-    console.log(response.status);
-    cycleTLS.exit().catch(err => { });
-}
-test()
+```bash
+curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
+  -H "content-type: application/json" \
+  -H "x-client-key: your_client_key" \
+  --data-raw '{"url":"https://nopecha.com/demo/cloudflare","mode":"waf-session"}'
 ```
 
 ## Create Turnstile Token with Little Resource Consumption
@@ -92,79 +72,33 @@ This endpoint allows you to generate tokens for a Cloudflare Turnstile Captcha. 
 
 However, in this method, the siteKey variable must be sent to Turnstile along with the site to create the token. If this does not work, you can examine the token generation system by loading the full page resource described in the next section.
 
-```js
-fetch('http://localhost:3000/cf-clearance-scraper', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        url: 'https://turnstile.zeroclover.io/',
-        siteKey: "0x4AAAAAAAEwzhD6pyKkgXC0",
-        mode: "turnstile-min",
-        // proxy:{
-        //     host: '127.0.0.1',
-        //     port: 3000,
-        //     username: 'username',
-        //     password: 'password'
-        // }
-    })
-})
-    .then(res => res.json())
-    .then(console.log)
-    .catch(console.log);
+```bash
+curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
+  -H "content-type: application/json" \
+  -H "x-client-key: your_client_key" \
+  --data-raw '{"url":"https://turnstile.zeroclover.io/","siteKey":"0x4AAAAAAAEwzhD6pyKkgXC0","mode":"turnstile-min"}'
 ```
 
 ## Creating Turnstile Token with Full Page Load
 
 This example request goes to the page at the given url address with a real browser, resolves the Turnstile and returns you the token.
 
-```js
-fetch('http://localhost:3000/cf-clearance-scraper', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        url: 'https://turnstile.zeroclover.io/',
-        mode: "turnstile-max",
-        // proxy:{
-        //     host: '127.0.0.1',
-        //     port: 3000,
-        //     username: 'username',
-        //     password: 'password'
-        // }
-    })
-})
-    .then(res => res.json())
-    .then(console.log)
-    .catch(console.log);
+```bash
+curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
+  -H "content-type: application/json" \
+  -H "x-client-key: your_client_key" \
+  --data-raw '{"url":"https://turnstile.zeroclover.io/","mode":"turnstile-max"}'
 ```
 
 ## Getting Page Source from a Site Protected with Cloudflare WAF
 
 With this request you can scrape the page source of a website protected with CF WAF.
 
-```js
-fetch('http://localhost:3000/cf-clearance-scraper', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        url: 'https://nopecha.com/demo/cloudflare',
-        mode: "source"
-        // proxy:{
-        //     host: '127.0.0.1',
-        //     port: 3000,
-        //     username: 'username',
-        //     password: 'password'
-        // }
-    })
-})
-    .then(res => res.json())
-    .then(console.log)
-    .catch(console.log);
+```bash
+curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
+  -H "content-type: application/json" \
+  -H "x-client-key: your_client_key" \
+  --data-raw '{"url":"https://nopecha.com/demo/cloudflare","mode":"source"}'
 ```
 
 ## Quick Questions and Answers
@@ -177,6 +111,9 @@ You can do this by changing the process.env.browserLimit value. The default is 2
 
 ### How Do I Add Authentication to Api?
 You can add authorisation by changing the process.env.authToken variable. If this variable is added, it returns 401 if the authToken variable in the request body is not equal to the token you specify.
+
+### How Do I Add clientKey Validation to Api?
+You can add clientKey validation by setting `process.env.CLIENT_KEY` (or `process.env.clientKey`). If set, the API returns 401 unless the request provides the same key via the `x-client-key` header (recommended), `x-api-key` header, `clientKey` in request body, or `clientKey` query string.
 
 ### How Do I Set The Timeout Time?
 You can give the variable process.env.timeOut a value in milliseconds. The default is 60000.

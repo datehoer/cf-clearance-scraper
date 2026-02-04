@@ -1,0 +1,15 @@
+services:
+  cf-clearance-scraper:
+    image: zfcsoftware/cf-clearance-scraper:latest
+    # Or build locally:
+    # build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      browserLimit: 20
+      timeOut: 60000
+      # Optional auth:
+      # authToken: "your_auth_token"
+      # Optional client key validation:
+      # CLIENT_KEY: "your_client_key"

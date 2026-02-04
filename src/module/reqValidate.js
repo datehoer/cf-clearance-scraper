@@ -28,6 +28,9 @@ const schema = {
         "authToken": {
             "type": "string"
         },
+        "clientKey": {
+            "type": "string"
+        },
         "siteKey": {
             "type": "string"
         }

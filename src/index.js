@@ -3,8 +3,27 @@ const app = express()
 const port = process.env.PORT || 3000
 const bodyParser = require('body-parser')
 const authToken = process.env.authToken || null
+const clientKey = process.env.CLIENT_KEY || process.env.clientKey || null
 const cors = require('cors')
 const reqValidate = require('./module/reqValidate')
+const crypto = require('crypto')
+
+function timingSafeEqualString(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false
+    const bufA = Buffer.from(a)
+    const bufB = Buffer.from(b)
+    if (bufA.length !== bufB.length) return false
+    return crypto.timingSafeEqual(bufA, bufB)
+}
+
+function readClientKey(req, data) {
+    return (
+        req.get('x-client-key') ||
+        req.get('x-api-key') ||
+        data?.clientKey ||
+        req.query?.clientKey
+    )
+}
 
 global.browserLength = 0
 global.browserLimit = Number(process.env.browserLimit) || 20
@@ -35,7 +54,16 @@ app.post('/cf-clearance-scraper', async (req, res) => {
 
     if (check !== true) return res.status(400).json({ code: 400, message: 'Bad Request', schema: check })
 
-    if (authToken && data.authToken !== authToken) return res.status(401).json({ code: 401, message: 'Unauthorized' })
+    if (clientKey) {
+        const providedClientKey = readClientKey(req, data)
+        if (!timingSafeEqualString(String(providedClientKey ?? ''), String(clientKey))) {
+            return res.status(401).json({ code: 401, message: 'Unauthorized' })
+        }
+    }
+
+    if (authToken && !timingSafeEqualString(String(data.authToken ?? ''), String(authToken))) {
+        return res.status(401).json({ code: 401, message: 'Unauthorized' })
+    }
 
     if (global.browserLength >= global.browserLimit) return res.status(429).json({ code: 429, message: 'Too Many Requests' })
 
