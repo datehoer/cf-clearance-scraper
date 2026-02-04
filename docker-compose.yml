@@ -1,8 +1,7 @@
 services:
   cf-clearance-scraper:
-    image: zfcsoftware/cf-clearance-scraper:latest
-    # Or build locally:
-    # build: .
+    build: .
+    # image: zfcsoftware/cf-clearance-scraper:latest
     ports:
       - "3000:3000"
     environment:
