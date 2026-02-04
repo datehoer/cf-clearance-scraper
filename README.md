@@ -59,6 +59,15 @@ By creating a session as in the example, you can send multiple requests to the s
 
 If you didn't set `CLIENT_KEY`, you can omit the `x-client-key` header in the examples below.
 
+If you want to use a proxy, add a `proxy` object to the JSON body:
+
+```bash
+curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
+  -H "content-type: application/json" \
+  -H "x-client-key: your_client_key" \
+  --data-raw '{"url":"https://example.com","mode":"source","proxy":{"host":"127.0.0.1","port":3000,"username":"username","password":"password"}}'
+```
+
 ```bash
 curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
   -H "content-type: application/json" \
