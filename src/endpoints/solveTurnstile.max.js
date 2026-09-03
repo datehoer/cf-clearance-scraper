@@ -1,80 +1,50 @@
-const fs = require("fs");
-function solveTurnstileMin({ url, proxy }) {
-  return new Promise(async (resolve, reject) => {
-    if (!url) return reject("Missing url parameter");
+const { withBrowserPage } = require('../module/browserTask')
 
-    const context = await global.browser
-      .createBrowserContext({
-        proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined, // https://pptr.dev/api/puppeteer.browsercontextoptions
-      })
-      .catch(() => null);
+async function solveTurnstileMax(data, { browser, signal, timeoutMs }) {
+  const { url, proxy } = data
+  if (!url) throw new Error('Missing url parameter')
 
-    if (!context) return reject("Failed to create browser context");
-
-    let isResolved = false;
-
-    var cl = setTimeout(async () => {
-      if (!isResolved) {
-        await context.close();
-        reject("Timeout Error");
-      }
-    }, global.timeOut || 60000);
-
-    try {
-      const page = await context.newPage();
-
-      if (proxy?.username && proxy?.password)
+  return withBrowserPage(
+    { browser, proxy, signal, timeoutMs },
+    async page => {
+      if (proxy?.username && proxy?.password) {
         await page.authenticate({
           username: proxy.username,
           password: proxy.password,
-        });
-        
+        })
+      }
+
       await page.evaluateOnNewDocument(() => {
-        let token = null;
+        let token = null
         async function waitForToken() {
           while (!token) {
             try {
-              token = window.turnstile.getResponse();
-            } catch (e) {}
-            await new Promise((resolve) => setTimeout(resolve, 500));
+              token = window.turnstile.getResponse()
+            } catch (_error) {}
+            await new Promise(resolve => setTimeout(resolve, 500))
           }
-          var c = document.createElement("input");
-          c.type = "hidden";
-          c.name = "cf-response";
-          c.value = token;
-          document.body.appendChild(c);
+          const response = document.createElement('input')
+          response.type = 'hidden'
+          response.name = 'cf-response'
+          response.value = token
+          document.body.appendChild(response)
         }
-        waitForToken();
-      });
+        void waitForToken()
+      })
 
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-      });
-
-      await page.waitForSelector('[name="cf-response"]', {
-        timeout: 60000,
-      });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 0 })
+      await page.waitForSelector('[name="cf-response"]', { timeout: 0 })
       const token = await page.evaluate(() => {
         try {
-          return document.querySelector('[name="cf-response"]').value;
-        } catch (e) {
-          return null;
+          return document.querySelector('[name="cf-response"]').value
+        } catch (_error) {
+          return null
         }
-      });
-      isResolved = true;
-      clearInterval(cl);
-      await context.close();
-      if (!token || token.length < 10) return reject("Failed to get token");
-      return resolve(token);
-    } catch (e) {
-      console.log(e);
-
-      if (!isResolved) {
-        await context.close();
-        clearInterval(cl);
-        reject(e.message);
-      }
-    }
-  });
+      })
+      if (!token || token.length < 10) throw new Error('Failed to get token')
+      return token
+    },
+  )
 }
-module.exports = solveTurnstileMin;
+
+module.exports = solveTurnstileMax

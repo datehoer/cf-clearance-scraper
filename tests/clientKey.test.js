@@ -1,29 +1,41 @@
-process.env.NODE_ENV = 'development'
-process.env.SKIP_LAUNCH = "true"
-process.env.clientKey = "client-key-123"
-process.env.browserLimit = -1
+const request = require('supertest')
 
-const server = require('../src/index')
-const request = require("supertest")
+const { createApp } = require('../src/app')
+const { createLogger } = require('../src/module/logger')
+const { createMetrics } = require('../src/module/metrics')
 
-test('Client Key Control Test - missing key', async () => {
-    return request(server)
-        .post("/cf-clearance-scraper")
-        .send({
-            url: 'https://nopecha.com/demo/cloudflare',
-            mode: "source"
-        })
+function testApp() {
+    const browserManager = {
+        isReady: () => false,
+        getBrowser: jest.fn(),
+    }
+    const config = {
+        clientKey: 'client-key-123',
+        authToken: null,
+        browserLimit: 20,
+        browserTimeoutMs: 100,
+        auditHashKey: 'test-audit-key',
+    }
+    const logger = createLogger({ writer: () => {} })
+    return createApp({
+        config,
+        browserManager,
+        logger,
+        metrics: createMetrics(),
+    }).app
+}
+
+test('rejects a request without the configured client key', async () => {
+    await request(testApp())
+        .post('/cf-clearance-scraper')
+        .send({ url: 'https://example.com', mode: 'source' })
         .expect(401)
-}, 10000)
+})
 
-test('Client Key Control Test - valid key', async () => {
-    return request(server)
-        .post("/cf-clearance-scraper")
-        .set("x-client-key", "client-key-123")
-        .send({
-            url: 'https://nopecha.com/demo/cloudflare',
-            mode: "source"
-        })
-        .expect(429)
-}, 10000)
-
+test('accepts the configured client key before checking browser readiness', async () => {
+    await request(testApp())
+        .post('/cf-clearance-scraper')
+        .set('x-client-key', 'client-key-123')
+        .send({ url: 'https://example.com', mode: 'source' })
+        .expect(503)
+})

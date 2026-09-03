@@ -1,14 +1,32 @@
 services:
   cf-clearance-scraper:
     build: .
-    # image: zfcsoftware/cf-clearance-scraper:latest
+    image: cf-clearance-scraper:local-fixed-v2
+    container_name: cf-clearance-scraper
+    restart: unless-stopped
+    stop_grace_period: 20s
+    shm_size: 1gb
+    mem_limit: 2g
+    memswap_limit: 3g
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     ports:
-      - "3000:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:3000:3000"
     environment:
-      PORT: 3000
-      browserLimit: 20
-      timeOut: 60000
-      # Optional auth:
-      # authToken: "your_auth_token"
-      # Optional client key validation:
-      # CLIENT_KEY: "your_client_key"
+      PORT: "3000"
+      BROWSER_LIMIT: "${BROWSER_LIMIT:-5}"
+      BROWSER_TIMEOUT_MS: "${BROWSER_TIMEOUT_MS:-60000}"
+      BROWSER_START_TIMEOUT_MS: "${BROWSER_START_TIMEOUT_MS:-30000}"
+      BROWSER_MAX_START_ATTEMPTS: "${BROWSER_MAX_START_ATTEMPTS:-3}"
+      BROWSER_RETRY_DELAY_MS: "${BROWSER_RETRY_DELAY_MS:-3000}"
+      SHUTDOWN_GRACE_MS: "${SHUTDOWN_GRACE_MS:-15000}"
+      TRUST_PROXY_HOPS: "${TRUST_PROXY_HOPS:-0}"
+      CLIENT_KEY: "${CLIENT_KEY:?CLIENT_KEY must be set}"
+      AUTH_TOKEN: "${AUTH_TOKEN:-}"
+      AUDIT_HASH_KEY: "${AUDIT_HASH_KEY:-}"
+      ALLOW_UNAUTHENTICATED: "false"
+      BROWSER_HEADLESS: "${BROWSER_HEADLESS:-false}"
+      BROWSER_DISABLE_XVFB: "${BROWSER_DISABLE_XVFB:-false}"

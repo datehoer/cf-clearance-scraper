@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --experimental-vm-modules ./node_modules/.bin/jest --detectOpenHandles --verbose"
+    "test": "node --experimental-vm-modules ./node_modules/.bin/jest --detectOpenHandles --verbose --testPathIgnorePatterns=tests/endpoints.test.js",
+    "test:e2e": "RUN_E2E=true node --experimental-vm-modules ./node_modules/.bin/jest --detectOpenHandles --verbose tests/endpoints.test.js --runInBand"
   },
   "jest": {
     "testMatch": [
@@ -28,14 +29,16 @@
   "license": "ISC",
   "description": "This package is an experimental and educational package created for Cloudflare protections.",
   "dependencies": {
-    "ajv": "^8.17.1",
+    "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "body-parser": "^1.20.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.0",
+    "body-parser": "^2.3.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^5.2.1",
+    "puppeteer-real-browser": "1.4.0"
+  },
+  "devDependencies": {
     "jest": "^29.7.0",
-    "puppeteer-real-browser": "^1.4.0",
-    "supertest": "^7.0.0"
+    "supertest": "^7.2.2"
   }
 }

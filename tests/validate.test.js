@@ -1,28 +1,42 @@
-process.env.NODE_ENV = 'development'
-process.env.SKIP_LAUNCH = "true"
-process.env.authToken = "123456"
-process.env.browserLimit = -1
+const request = require('supertest')
 
-const server = require('../src/index')
-const request = require("supertest")
+const { createApp } = require('../src/app')
+const { createLogger } = require('../src/module/logger')
+const { createMetrics } = require('../src/module/metrics')
 
-test('Request Authorisation Control Test', async () => {
-    return request(server)
-        .post("/cf-clearance-scraper")
-        .send({
-            url: 'https://nopecha.com/demo/cloudflare',
-            mode: "source"
-        })
+function testApp() {
+    const config = {
+        clientKey: null,
+        authToken: 'auth-token-123',
+        browserLimit: 20,
+        browserTimeoutMs: 100,
+        auditHashKey: 'test-audit-key',
+    }
+    return createApp({
+        config,
+        browserManager: {
+            isReady: () => false,
+            getBrowser: jest.fn(),
+        },
+        logger: createLogger({ writer: () => {} }),
+        metrics: createMetrics(),
+    }).app
+}
+
+test('rejects a request without the configured auth token', async () => {
+    await request(testApp())
+        .post('/cf-clearance-scraper')
+        .send({ url: 'https://example.com', mode: 'source' })
         .expect(401)
-}, 10000)
+})
 
-test('Browser Context Limit Control Test', async () => {
-    return request(server)
-        .post("/cf-clearance-scraper")
+test('checks readiness after a valid auth token', async () => {
+    await request(testApp())
+        .post('/cf-clearance-scraper')
         .send({
-            url: 'https://nopecha.com/demo/cloudflare',
-            mode: "source",
-            authToken: "123456"
+            url: 'https://example.com',
+            mode: 'source',
+            authToken: 'auth-token-123',
         })
-        .expect(429)
-}, 10000)
+        .expect(503)
+})

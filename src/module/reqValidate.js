@@ -6,6 +6,7 @@ addFormats(ajv)
 
 const schema = {
     "type": "object",
+    "maxProperties": 6,
     "properties": {
         "mode": {
             "type": "string",
@@ -14,28 +15,44 @@ const schema = {
         "proxy": {
             "type": "object",
             "properties": {
-                "host": { "type": "string" },
-                "port": { "type": "integer" },
-                "username": { "type": "string" },
-                "password": { "type": "string" }
+                "host": { "type": "string", "minLength": 1, "maxLength": 255 },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "username": { "type": "string", "maxLength": 512 },
+                "password": { "type": "string", "maxLength": 512 }
             },
+            "required": ["host", "port"],
             "additionalProperties": false
         },
         "url": {
             "type": "string",
             "format": "uri",
+            "pattern": "^https?://",
+            "maxLength": 4096
         },
         "authToken": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 4096
         },
         "clientKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 4096
         },
         "siteKey": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
         }
     },
     "required": ["mode", "url"],
+    "allOf": [
+        {
+            "if": {
+                "properties": { "mode": { "const": "turnstile-min" } },
+                "required": ["mode"]
+            },
+            "then": { "required": ["siteKey"] }
+        }
+    ],
     "additionalProperties": false
 }
 
@@ -52,9 +69,11 @@ const schema = {
 // }
 
 
+const validateRequest = ajv.compile(schema)
+
 function validate(data) {
-    const valid = ajv.validate(schema, data)
-    if (!valid) return ajv.errors
+    const valid = validateRequest(data)
+    if (!valid) return validateRequest.errors
     else return true
 }
 

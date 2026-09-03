@@ -1,98 +1,136 @@
-const express = require('express')
-const app = express()
-const port = process.env.PORT || 3000
-const bodyParser = require('body-parser')
-const authToken = process.env.authToken || null
-const clientKey = process.env.CLIENT_KEY || process.env.clientKey || null
-const cors = require('cors')
-const reqValidate = require('./module/reqValidate')
-const crypto = require('crypto')
+const dotenv = require('dotenv')
+const { connect } = require('puppeteer-real-browser')
 
-function timingSafeEqualString(a, b) {
-    if (typeof a !== 'string' || typeof b !== 'string') return false
-    const bufA = Buffer.from(a)
-    const bufB = Buffer.from(b)
-    if (bufA.length !== bufB.length) return false
-    return crypto.timingSafeEqual(bufA, bufB)
+const { createApp } = require('./app')
+const { loadConfig } = require('./config')
+const { buildBrowserLaunchOptions } = require('./module/browserLaunchOptions')
+const { createBrowserManager } = require('./module/browserManager')
+const { createLogger } = require('./module/logger')
+const { createMetrics } = require('./module/metrics')
+
+function listen(app, port, host) {
+    return new Promise((resolve, reject) => {
+        const server = app.listen(port, host)
+        const onError = error => reject(error)
+        server.once('error', onError)
+        server.once('listening', () => {
+            server.removeListener('error', onError)
+            resolve(server)
+        })
+    })
 }
 
-function readClientKey(req, data) {
-    return (
-        req.get('x-client-key') ||
-        req.get('x-api-key') ||
-        data?.clientKey ||
-        req.query?.clientKey
-    )
-}
-
-global.browserLength = 0
-global.browserLimit = Number(process.env.browserLimit) || 20
-global.timeOut = Number(process.env.timeOut || 60000)
-
-app.use(bodyParser.json({}))
-app.use(bodyParser.urlencoded({ extended: true }))
-app.use(cors())
-if (process.env.NODE_ENV !== 'development') {
-    let server = app.listen(port, () => { console.log(`Server running on port ${port}`) })
-    try {
-        server.timeout = global.timeOut
-    } catch (e) { }
-}
-if (process.env.SKIP_LAUNCH != 'true') require('./module/createBrowser')
-
-const getSource = require('./endpoints/getSource')
-const solveTurnstileMin = require('./endpoints/solveTurnstile.min')
-const solveTurnstileMax = require('./endpoints/solveTurnstile.max')
-const wafSession = require('./endpoints/wafSession')
-
-
-app.post('/cf-clearance-scraper', async (req, res) => {
-
-    const data = req.body
-
-    const check = reqValidate(data)
-
-    if (check !== true) return res.status(400).json({ code: 400, message: 'Bad Request', schema: check })
-
-    if (clientKey) {
-        const providedClientKey = readClientKey(req, data)
-        if (!timingSafeEqualString(String(providedClientKey ?? ''), String(clientKey))) {
-            return res.status(401).json({ code: 401, message: 'Unauthorized' })
+function closeServer(server) {
+    if (!server) return Promise.resolve()
+    return new Promise(resolve => {
+        try {
+            server.close(() => resolve())
+        } catch (_error) {
+            resolve()
         }
+    })
+}
+
+async function main(options = {}) {
+    const processObject = options.process || process
+    const env = options.env || processObject.env
+    if (!options.skipDotenv) dotenv.config()
+
+    const config = options.config || loadConfig(env)
+    const logger = options.logger || createLogger({ pod: env.HOSTNAME || 'unknown' })
+    const metrics = options.metrics || createMetrics()
+    let server = null
+    let service = null
+    let shutdownPromise = null
+
+    const shutdown = signal => {
+        if (shutdownPromise) return shutdownPromise
+        shutdownPromise = (async () => {
+            logger.info({ event: 'shutdown_started', signal })
+            service?.beginDraining()
+            service?.abortAll()
+            const cleanup = Promise.allSettled([
+                closeServer(server),
+                browserManager.close(),
+            ])
+            const timeout = new Promise(resolve => {
+                const timer = setTimeout(resolve, config.shutdownGraceMs)
+                timer.unref?.()
+            })
+            await Promise.race([cleanup, timeout])
+            server?.closeAllConnections?.()
+            logger.info({ event: 'shutdown_completed', signal })
+        })()
+        return shutdownPromise
     }
 
-    if (authToken && !timingSafeEqualString(String(data.authToken ?? ''), String(authToken))) {
-        return res.status(401).json({ code: 401, message: 'Unauthorized' })
+    const browserManager = createBrowserManager({
+        connect: options.connect || connect,
+        launchOptions: options.launchOptions || buildBrowserLaunchOptions(env),
+        retryDelayMs: config.browserRetryDelayMs,
+        startTimeoutMs: config.browserStartTimeoutMs,
+        maxStartAttempts: config.browserMaxStartAttempts,
+        logger,
+        metrics,
+        onFatal(error) {
+            logger.error({
+                event: 'browser_fatal',
+                errorCode: error?.code || 'BROWSER_START_FAILED',
+                error,
+            })
+            void shutdown('browser-fatal').finally(() => {
+                if (options.exitOnFatal === false) return
+                processObject.exit(1)
+            })
+        },
+    })
+
+    try {
+        await browserManager.start()
+        service = createApp({ config, browserManager, logger, metrics })
+        server = await (options.listen || listen)(service.app, config.port, config.host)
+        server.requestTimeout = config.browserTimeoutMs + 5000
+
+        const handleSignal = signal => {
+            void shutdown(signal).finally(() => {
+                processObject.exitCode = 0
+            })
+        }
+        processObject.once('SIGTERM', handleSignal)
+        processObject.once('SIGINT', handleSignal)
+        logger.info({ event: 'service_ready', browserReady: true })
+
+        return Object.freeze({
+            browserManager,
+            config,
+            logger,
+            metrics,
+            server,
+            service,
+            shutdown,
+        })
+    } catch (error) {
+        await Promise.allSettled([closeServer(server), browserManager.close()])
+        throw error
     }
+}
 
-    if (global.browserLength >= global.browserLimit) return res.status(429).json({ code: 429, message: 'Too Many Requests' })
+if (require.main === module) {
+    void main().catch(error => {
+        const logger = createLogger()
+        logger.error({
+            event: 'startup_failed',
+            errorCode: error?.code || 'STARTUP_FAILED',
+            error,
+        })
+        // Exiting PID 1 lets Docker kill any Chromium process that a failed
+        // third-party launch did not return a handle for.
+        process.exit(1)
+    })
+}
 
-    if (process.env.SKIP_LAUNCH != 'true' && !global.browser) return res.status(500).json({ code: 500, message: 'The scanner is not ready yet. Please try again a little later.' })
-
-    var result = { code: 500 }
-
-    global.browserLength++
-
-    switch (data.mode) {
-        case "source":
-            result = await getSource(data).then(res => { return { source: res, code: 200 } }).catch(err => { return { code: 500, message: err.message } })
-            break;
-        case "turnstile-min":
-            result = await solveTurnstileMin(data).then(res => { return { token: res, code: 200 } }).catch(err => { return { code: 500, message: err.message } })
-            break;
-        case "turnstile-max":
-            result = await solveTurnstileMax(data).then(res => { return { token: res, code: 200 } }).catch(err => { return { code: 500, message: err.message } })
-            break;
-        case "waf-session":
-            result = await wafSession(data).then(res => { return { ...res, code: 200 } }).catch(err => { return { code: 500, message: err.message } })
-            break;
-    }
-
-    global.browserLength--
-
-    res.status(result.code ?? 500).send(result)
-})
-
-app.use((req, res) => { res.status(404).json({ code: 404, message: 'Not Found' }) })
-
-if (process.env.NODE_ENV == 'development') module.exports = app
+module.exports = {
+    closeServer,
+    listen,
+    main,
+}

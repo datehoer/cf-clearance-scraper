@@ -1,26 +1,28 @@
-FROM node:latest
+FROM node:20-bookworm
 
 RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
     ca-certificates \
-    apt-transport-https \
     chromium \
-    chromium-driver \
+    tini \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROME_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm update
-RUN npm install
-RUN npm i -g pm2
+RUN npm ci --omit=dev
 COPY . .
+
+USER node
 
 EXPOSE 3000
 
-CMD ["pm2-runtime", "src/index.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["node", "-e", "fetch('http://127.0.0.1:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "src/index.js"]

@@ -3,11 +3,11 @@
 
 # CF Clearance Scraper
 
-This library was created for testing and training purposes to retrieve the page source of websites, create Cloudflare Turnstile tokens and create Cloudflare WAF sessions.
+This library was created for testing and training purposes to retrieve the page source of websites, create Cloudflare Turnstile tokens, and create Cloudflare WAF sessions.
 
-Cloudflare protection not only checks cookies in the request. It also checks variables in the header. For this reason, it is recommended to use it with the sample code in this readme file.
+Cloudflare protection not only checks cookies in the request. It also checks variables in the headers. For this reason, it is recommended to use the returned cookies and headers together when replaying requests.
 
-Cookies with cf in the name belong to Cloudflare. You can find out what these cookies do and how long they are valid by **[Clicking Here](https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/)**.
+Cookies with `cf` in the name belong to Cloudflare. You can find out what these cookies do and how long they are valid by **[clicking here](https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/)**.
 
 ## Sponsor
 
@@ -19,32 +19,34 @@ Installation with Docker is recommended.
 
 **Docker**
 
-Please make sure you have installed the latest image. If you get an error, try downloading the latest version by going to Docker Hub.
+Build the local image so the lifecycle fixes in this repository are included:
 
 ```bash
-sudo docker rmi zfcsoftware/cf-clearance-scraper:latest --force
+docker build -t cf-clearance-scraper:local .
 ```
 
 ```bash
-docker run -d -p 3000:3000 \
--e PORT=3000 \
--e browserLimit=20 \
--e timeOut=60000 \
--e CLIENT_KEY=your_client_key \
-zfcsoftware/cf-clearance-scraper:latest
+docker run -d --name cf-clearance-scraper \
+  --restart unless-stopped \
+  --shm-size=1g \
+  -p 127.0.0.1:3000:3000 \
+  -e CLIENT_KEY=replace_with_a_strong_random_value \
+  cf-clearance-scraper:local
 ```
 
-If `CLIENT_KEY` is set, each request must include the same key (recommended via `x-client-key` header), otherwise it returns 401.
+Production startup requires `CLIENT_KEY` or `AUTH_TOKEN` unless
+`ALLOW_UNAUTHENTICATED=true` is explicitly set. Binding to loopback is recommended
+unless a protected reverse proxy is in front of the service.
 
 **Docker Compose**
 
 `docker-compose.yml` is included in this repo.
 
 ```bash
-docker compose up -d
+CLIENT_KEY=replace_with_a_strong_random_value docker compose up -d --build
 ```
 
-**Github**
+**GitHub**
 
 ```bash
 git clone https://github.com/zfcsoftware/cf-clearance-scraper
@@ -53,11 +55,120 @@ npm install
 npm run start
 ```
 
-## Create Cloudflare WAF Session
+## Configuration
 
-By creating a session as in the example, you can send multiple requests to the same site without being blocked. Since sites may have TLS protection, it is recommended to send requests with the library in the example.
+Environment variables used by the current implementation:
 
-If you didn't set `CLIENT_KEY`, you can omit the `x-client-key` header in the examples below.
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `PORT` | No | `3000` | HTTP port for the Express server. |
+| `BROWSER_LIMIT` | No | `20` | Maximum concurrent browser contexts. Legacy `browserLimit` remains supported. |
+| `BROWSER_TIMEOUT_MS` | No | `60000` | Hard deadline for context creation and browser work. Legacy `timeOut` remains supported. |
+| `BROWSER_START_TIMEOUT_MS` | No | `30000` | Deadline for one Chromium launch attempt. |
+| `BROWSER_MAX_START_ATTEMPTS` | No | `3` | Bounded launch attempts before exit so Docker can clean the process namespace. |
+| `BROWSER_RETRY_DELAY_MS` | No | `3000` | Delay between launch attempts. |
+| `SHUTDOWN_GRACE_MS` | No | `15000` | Grace period for HTTP and browser shutdown. |
+| `TRUST_PROXY_HOPS` | No | `0` | Number of explicitly trusted reverse-proxy hops used to derive the pseudonymous caller ID. |
+| `CLIENT_KEY` or `clientKey` | Production: one auth method | unset | Shared secret for client-key validation. |
+| `AUTH_TOKEN` or `authToken` | Production: one auth method | unset | Shared secret for request-body auth-token validation. |
+| `AUDIT_HASH_KEY` | No | random per process | Makes pseudonymous source IDs stable across restarts. Never logged. |
+| `ALLOW_UNAUTHENTICATED` | No | `false` outside development | Explicitly permits startup without either auth method. |
+
+## API Overview
+
+- Base URL: `http://localhost:3000`
+- Route: `POST /cf-clearance-scraper`
+- Content type: `application/json`
+
+### Request Body
+
+All requests use the same JSON envelope:
+
+```json
+{
+  "url": "https://example.com",
+  "mode": "source",
+  "proxy": {
+    "host": "127.0.0.1",
+    "port": 3000,
+    "username": "username",
+    "password": "password"
+  },
+  "authToken": "your_auth_token",
+  "clientKey": "your_client_key",
+  "siteKey": "0x4AAAAAAAEwzhD6pyKkgXC0"
+}
+```
+
+Field behavior:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `url` | `string` | Yes | Must be a valid absolute URI. |
+| `mode` | `string` | Yes | One of `source`, `turnstile-min`, `turnstile-max`, `waf-session`. |
+| `proxy.host` | `string` | No | Proxy host. |
+| `proxy.port` | `integer` | No | Proxy port. |
+| `proxy.username` | `string` | No | Proxy username. |
+| `proxy.password` | `string` | No | Proxy password. |
+| `authToken` | `string` | Only if `AUTH_TOKEN` or legacy `authToken` is set | Read from the JSON body only. |
+| `clientKey` | `string` | Optional fallback | Only used if you choose to send the client key in the body instead of headers or query string. |
+| `siteKey` | `string` | Required for `turnstile-min` | Needed to render the lightweight Turnstile page. |
+
+Additional request fields are rejected with `400 Bad Request`.
+
+## Authentication
+
+The current implementation supports two optional shared-secret checks. They are independent and can be enabled together.
+
+### Client Key Validation
+
+Set `CLIENT_KEY` or `clientKey` in the server environment to require a client key on every request.
+
+The server accepts the client key in this order:
+
+1. `x-client-key` header
+2. `x-api-key` header
+3. `clientKey` in the JSON body
+4. `clientKey` in the query string
+
+If the provided value does not exactly match the configured key, the API returns `401 Unauthorized`.
+
+Recommended request style:
+
+```bash
+curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
+  -H "content-type: application/json" \
+  -H "x-client-key: your_client_key" \
+  --data-raw '{"url":"https://example.com","mode":"source"}'
+```
+
+### Auth Token Validation
+
+Set `AUTH_TOKEN` (or legacy `authToken`) in the server environment to require a matching token in the JSON body of every request.
+
+Important:
+
+- This value is not read from headers.
+- This value is not read from query parameters.
+- The field name in the request body must be `authToken`.
+
+Example:
+
+```bash
+curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
+  -H "content-type: application/json" \
+  --data-raw '{"url":"https://example.com","mode":"source","authToken":"your_auth_token"}'
+```
+
+### When Both Are Enabled
+
+If both `CLIENT_KEY` and `authToken` are configured, both checks must pass for the request to continue.
+
+## Endpoint Reference
+
+### 1. Get Page Source
+
+Use `mode: "source"` to load the page in a real browser and return the final HTML source.
 
 If you want to use a proxy, add a `proxy` object to the JSON body:
 
@@ -68,6 +179,19 @@ curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
   --data-raw '{"url":"https://example.com","mode":"source","proxy":{"host":"127.0.0.1","port":3000,"username":"username","password":"password"}}'
 ```
 
+Successful response shape:
+
+```json
+{
+  "source": "<html>...</html>",
+  "code": 200
+}
+```
+
+### 2. Create Cloudflare WAF Session
+
+Use `mode: "waf-session"` to retrieve cookies and request headers from a real browser session. This is useful when you want to replay requests against the same site with the harvested session data.
+
 ```bash
 curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
   -H "content-type: application/json" \
@@ -75,11 +199,21 @@ curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
   --data-raw '{"url":"https://nopecha.com/demo/cloudflare","mode":"waf-session"}'
 ```
 
-## Create Turnstile Token with Little Resource Consumption
+Successful response shape:
 
-This endpoint allows you to generate tokens for a Cloudflare Turnstile Captcha. It blocks the request that fetches the page resource and instead makes the page resource a simple Turnstile render page. This allows you to generate tokens without having to load any additional css or js files. 
+```json
+{
+  "cookies": [],
+  "headers": {},
+  "code": 200
+}
+```
 
-However, in this method, the siteKey variable must be sent to Turnstile along with the site to create the token. If this does not work, you can examine the token generation system by loading the full page resource described in the next section.
+### 3. Create Turnstile Token with Little Resource Consumption
+
+This endpoint generates a Cloudflare Turnstile token while loading as little page content as possible. It intercepts the target document request and replaces it with a minimal page that renders Turnstile only.
+
+In this mode, `siteKey` must be provided in the JSON body. If this does not work for your target, use the full-page mode described below.
 
 ```bash
 curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
@@ -88,9 +222,18 @@ curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
   --data-raw '{"url":"https://turnstile.zeroclover.io/","siteKey":"0x4AAAAAAAEwzhD6pyKkgXC0","mode":"turnstile-min"}'
 ```
 
-## Creating Turnstile Token with Full Page Load
+Successful response shape:
 
-This example request goes to the page at the given url address with a real browser, resolves the Turnstile and returns you the token.
+```json
+{
+  "token": "0.xxxxx",
+  "code": 200
+}
+```
+
+### 4. Create Turnstile Token with Full Page Load
+
+This mode loads the real target page in a browser, waits for Turnstile to resolve, and returns the token.
 
 ```bash
 curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
@@ -99,35 +242,79 @@ curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
   --data-raw '{"url":"https://turnstile.zeroclover.io/","mode":"turnstile-max"}'
 ```
 
-## Getting Page Source from a Site Protected with Cloudflare WAF
+Successful response shape:
 
-With this request you can scrape the page source of a website protected with CF WAF.
-
-```bash
-curl -sS -X POST "http://localhost:3000/cf-clearance-scraper" \
-  -H "content-type: application/json" \
-  -H "x-client-key: your_client_key" \
-  --data-raw '{"url":"https://nopecha.com/demo/cloudflare","mode":"source"}'
+```json
+{
+  "token": "0.xxxxx",
+  "code": 200
+}
 ```
+
+## Response Codes
+
+Common responses from the current implementation:
+
+| HTTP status | Response body | Meaning |
+| --- | --- | --- |
+| `200` | `{ "code": 200, ... }` | Request succeeded. The payload field depends on `mode`. |
+| `400` | `{ "code": 400, "message": "Bad Request", "schema": [...] }` | Request body failed schema validation. |
+| `401` | `{ "code": 401, "message": "Unauthorized" }` | `CLIENT_KEY` or `authToken` validation failed. |
+| `404` | `{ "code": 404, "message": "Not Found" }` | Route not found. |
+| `429` | `{ "code": 429, "message": "Too Many Requests" }` | `browserLimit` was reached. |
+| `503` | `{ "code": 503, "message": "Service Unavailable" }` | Browser is starting, restarting, or draining. |
+| `504` | `{ "code": 504, "message": "Gateway Timeout" }` | The bounded browser task timed out. |
+| `500` | `{ "code": 500, "message": "Internal Server Error" }` | An unclassified endpoint failure occurred. |
+
+## Operations
+
+- `GET /livez`: process liveness.
+- `GET /readyz`: browser readiness and drain state.
+- `GET /health`: safe status summary with active-request and browser state.
+- `GET /metrics`: Prometheus text metrics with fixed, low-cardinality labels.
+
+Scraper requests receive an `X-Request-ID`. Structured logs contain only an
+allowlisted event schema. Caller address and user agent are represented as
+HMAC-based `sourceId` and `agentId` values; raw addresses, target URLs, cookies,
+tokens, proxy credentials, and returned page source are not logged. Set a private
+`AUDIT_HASH_KEY` if those pseudonymous IDs must remain comparable across restarts.
+Keep `TRUST_PROXY_HOPS=0` for direct exposure; set the exact hop count only when
+the service is reachable exclusively through trusted proxies.
+
+## Notes and Behavior
+
+- The service keeps one global browser instance and creates a new isolated browser context per request.
+- `turnstile-min` requires `siteKey`; the request schema enforces it.
+- If browser startup is still in progress, requests return `503`.
+- Proxy credentials are applied with `page.authenticate()` when both `proxy.username` and `proxy.password` are provided.
+- Every request closes its Page and BrowserContext in a bounded cleanup path, including timeout and client-cancellation cases.
 
 ## Quick Questions and Answers
 
 ### Does It Open A New Browser On Every Request?
 No, a new context is started with each request and closed when the job is finished. Processes are executed with isolated contexts through a single browser.
 
-### How Do I Limit the Browser Context to Open?
-You can do this by changing the process.env.browserLimit value. The default is 20
+### How Do I Limit The Browser Contexts That Can Open?
+Set `BROWSER_LIMIT`. The legacy `browserLimit` spelling remains supported. The default is `20`.
 
-### How Do I Add Authentication to Api?
-You can add authorisation by changing the process.env.authToken variable. If this variable is added, it returns 401 if the authToken variable in the request body is not equal to the token you specify.
+### How Do I Add Authentication To The API?
+You can enable one or both of these checks:
 
-### How Do I Add clientKey Validation to Api?
-You can add clientKey validation by setting `process.env.CLIENT_KEY` (or `process.env.clientKey`). If set, the API returns 401 unless the request provides the same key via the `x-client-key` header (recommended), `x-api-key` header, `clientKey` in request body, or `clientKey` query string.
+- `AUTH_TOKEN` (or legacy `authToken`): requires a matching `authToken` field in the JSON body.
+- `process.env.CLIENT_KEY` or `process.env.clientKey`: requires a matching client key via `x-client-key`, `x-api-key`, `clientKey` in the body, or `clientKey` in the query string.
 
-### How Do I Set The Timeout Time?
-You can give the variable process.env.timeOut a value in milliseconds. The default is 60000.
+If a configured value does not match, the API returns `401`.
+
+### How Do I Add Client-Key Validation To The API?
+Set `process.env.CLIENT_KEY` or `process.env.clientKey`. If set, the API returns `401` unless the request provides the same key via the `x-client-key` header, `x-api-key` header, `clientKey` in the request body, or `clientKey` in the query string.
+
+### How Do I Set The Timeout?
+Set `BROWSER_TIMEOUT_MS` in milliseconds. The legacy `timeOut` spelling remains supported. The default is `60000`.
 
 ## Disclaimer of Liability
+
 This repository was created purely for testing and training purposes. The user is responsible for any prohibited liability that may arise from its use.
-The library is not intended to harm any site or company. The user is responsible for any damage that may arise. 
-Users of this repository are deemed to have accepted this disclaimer. 
+
+The library is not intended to harm any site or company. The user is responsible for any damage that may arise.
+
+Users of this repository are deemed to have accepted this disclaimer.
