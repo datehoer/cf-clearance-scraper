@@ -1,7 +1,7 @@
 services:
   cf-clearance-scraper:
     build: .
-    image: cf-clearance-scraper:local-fixed-v2
+    image: cf-clearance-scraper:clark-v2
     container_name: cf-clearance-scraper
     restart: unless-stopped
     stop_grace_period: 20s
