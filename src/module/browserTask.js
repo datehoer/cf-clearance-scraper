@@ -103,8 +103,12 @@ async function withBrowserContext({ browser, proxy, signal, timeoutMs }, operati
     try {
         if (control.error) throw control.error
 
-        const creationOutcome = asOutcome(() => browser.createBrowserContext({
-            proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined,
+        const creationOutcome = asOutcome(() => browser.newContext({
+            proxy: proxy ? {
+                server: `http://${proxy.host}:${proxy.port}`,
+                username: proxy.username,
+                password: proxy.password,
+            } : undefined,
         }))
         const acquisition = await Promise.race([creationOutcome, control.outcome])
         if (acquisition.status === 'rejected') {
@@ -139,6 +143,8 @@ async function withBrowserContext({ browser, proxy, signal, timeoutMs }, operati
     }
 }
 
+const { startTurnstileSolver } = require('./turnstile')
+
 async function withBrowserPage(options, operation) {
     return withBrowserContext(options, async (context, taskSignal) => {
         const page = await context.newPage()
@@ -149,12 +155,31 @@ async function withBrowserPage(options, operation) {
             return listener
         }
 
+        // Replicate puppeteer-real-browser's `turnstile: true` behavior: keep
+        // clicking the Turnstile checkbox until the challenge resolves.
+        const stopTurnstile = startTurnstileSolver(page)
+
+        // Replicate puppeteer-real-browser's screenX/screenY stealth patch.
+        await page.addInitScript(() => {
+            Object.defineProperty(MouseEvent.prototype, 'screenX', {
+                get: function () {
+                    return this.clientX + window.screenX
+                },
+            })
+            Object.defineProperty(MouseEvent.prototype, 'screenY', {
+                get: function () {
+                    return this.clientY + window.screenY
+                },
+            })
+        })
+
         try {
             return await operation(page, { signal: taskSignal, on })
         } finally {
+            stopTurnstile()
             for (const [event, listener] of listeners) {
                 try {
-                    page.removeListener(event, listener)
+                    page.off(event, listener)
                 } catch (_error) {}
             }
             await safeClosePage(page)

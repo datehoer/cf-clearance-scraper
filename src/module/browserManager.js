@@ -65,7 +65,7 @@ function createBrowserManager({
     }
 
     function validateHandle(handle) {
-        const required = ['once', 'close', 'createBrowserContext']
+        const required = ['once', 'close', 'newContext']
         const missing = required.filter(name => typeof handle?.[name] !== 'function')
         if (missing.length > 0) {
             const error = new Error(`Invalid browser handle: missing ${missing.join(', ')}`)

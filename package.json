@@ -18,7 +18,8 @@
     "cloudflare",
     "waf",
     "scraper",
-    "puppeteer",
+    "patchright",
+    "playwright",
     "xvfb",
     "turnstile",
     "bypass",
@@ -35,7 +36,7 @@
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
-    "puppeteer-real-browser": "1.4.0"
+    "patchright": "^1.63.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

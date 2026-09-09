@@ -8,6 +8,6 @@ test('rejects an inaccessible Chromium path before calling the launcher', () => 
 
 test('preserves safe Chrome defaults and local-only debugging', () => {
     const options = buildBrowserLaunchOptions({ CHROME_PATH: process.execPath })
-    expect(options.ignoreAllFlags).toBe(false)
+    expect(options.executablePath).toBe(process.execPath)
     expect(options.args).toContain('--remote-debugging-address=127.0.0.1')
 })
