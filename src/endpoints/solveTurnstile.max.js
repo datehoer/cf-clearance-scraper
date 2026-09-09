@@ -7,14 +7,7 @@ async function solveTurnstileMax(data, { browser, signal, timeoutMs }) {
   return withBrowserPage(
     { browser, proxy, signal, timeoutMs },
     async page => {
-      if (proxy?.username && proxy?.password) {
-        await page.authenticate({
-          username: proxy.username,
-          password: proxy.password,
-        })
-      }
-
-      await page.evaluateOnNewDocument(() => {
+      await page.addInitScript(() => {
         let token = null
         async function waitForToken() {
           while (!token) {
@@ -33,7 +26,7 @@ async function solveTurnstileMax(data, { browser, signal, timeoutMs }) {
       })
 
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 0 })
-      await page.waitForSelector('[name="cf-response"]', { timeout: 0 })
+      await page.waitForSelector('[name="cf-response"]', { state: 'attached', timeout: 0 })
       const token = await page.evaluate(() => {
         try {
           return document.querySelector('[name="cf-response"]').value

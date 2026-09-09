@@ -1,3 +1,5 @@
+const fs = require('node:fs')
+
 function parseBoolean(value, fallback) {
     if (value === undefined || value === '') return fallback
     const normalized = String(value).trim().toLowerCase()
@@ -15,6 +17,32 @@ function parseHeadless(value) {
     return false
 }
 
+// clark-browser fingerprint switches. These are no-ops on stock Chromium but
+// drive the source-level persona patches in the clark-browser binary. Defaults
+// mirror the configuration that was verified to pass HCA's managed challenge.
+function clarkFingerprintArgs(env) {
+    const seed = env.CLARK_FINGERPRINT || String(Math.floor(10000 + Math.random() * 90000))
+    const platform = env.CLARK_FINGERPRINT_PLATFORM || 'linux'
+    const brand = env.CLARK_FINGERPRINT_BRAND || 'Chrome'
+    const brandVersion = env.CLARK_FINGERPRINT_BRAND_VERSION || '148.0.0.0'
+    const timezone = env.CLARK_FINGERPRINT_TIMEZONE || 'America/New_York'
+    const locale = env.CLARK_FINGERPRINT_LOCALE || 'en-US'
+    const networkProfile = env.CLARK_FINGERPRINT_NETWORK_PROFILE || 'residential'
+
+    return [
+        `--fingerprint=${seed}`,
+        `--fingerprint-platform=${platform}`,
+        `--fingerprint-brand=${brand}`,
+        `--fingerprint-brand-version=${brandVersion}`,
+        `--fingerprint-timezone=${timezone}`,
+        `--fingerprint-locale=${locale}`,
+        `--fingerprint-network-profile=${networkProfile}`,
+        '--disable-features=WebGPU',
+        `--lang=${locale}`,
+        '--accept-lang=en-US,en',
+    ]
+}
+
 function buildBrowserLaunchOptions(env = process.env) {
     const extraArgs = String(env.CHROME_LAUNCH_ARGS || '')
         .trim()
@@ -23,7 +51,9 @@ function buildBrowserLaunchOptions(env = process.env) {
     const args = [...new Set([
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--no-sandbox',
         '--remote-debugging-address=127.0.0.1',
+        ...clarkFingerprintArgs(env),
         ...extraArgs,
     ])]
 
@@ -41,18 +71,12 @@ function buildBrowserLaunchOptions(env = process.env) {
     return {
         args,
         headless: parseHeadless(env.BROWSER_HEADLESS),
-        turnstile: true,
-        connectOption: { defaultViewport: null },
-        disableXvfb: parseBoolean(env.BROWSER_DISABLE_XVFB, false),
-        // Keeping chrome-launcher's defaults is important. The prior deployed
-        // image removed them and sometimes started Chromium without a page.
-        ignoreAllFlags: false,
-        customConfig: {
-            chromePath,
-            logLevel: env.CHROME_LAUNCHER_LOG_LEVEL || 'silent',
-        },
+        executablePath: chromePath,
+        // Patchright strips --enable-automation and adds
+        // --disable-blink-features=AutomationControlled itself; keep the
+        // remaining Playwright defaults (viewport, etc.) intact.
+        ignoreDefaultArgs: [],
     }
 }
 
 module.exports = { buildBrowserLaunchOptions }
-const fs = require('node:fs')

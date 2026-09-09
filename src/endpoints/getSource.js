@@ -8,20 +8,12 @@ async function getSource(data, { browser, signal, timeoutMs }) {
   return withBrowserPage(
     { browser, proxy, signal, timeoutMs },
     async (page, lifecycle) => {
-      if (proxy?.username && proxy?.password) {
-        await page.authenticate({
-          username: proxy.username,
-          password: proxy.password,
-        })
-      }
-
-      await page.setRequestInterception(true)
       return navigateForTargetResponse({
         page,
         url,
         ...lifecycle,
         extract: async () => {
-          await page.waitForNetworkIdle({ idleTime: 500, timeout: 5000 }).catch(() => {})
+          await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {})
           return page.content()
         },
       })

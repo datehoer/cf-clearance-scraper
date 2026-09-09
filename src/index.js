@@ -1,5 +1,5 @@
 const dotenv = require('dotenv')
-const { connect } = require('puppeteer-real-browser')
+const { connect } = require('./module/connectBrowser')
 
 const { createApp } = require('./app')
 const { loadConfig } = require('./config')

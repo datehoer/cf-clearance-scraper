@@ -5,7 +5,7 @@ function browserHandle() {
     return {
         once: jest.fn(),
         close: jest.fn().mockResolvedValue(undefined),
-        createBrowserContext: jest.fn(),
+        newContext: jest.fn(),
     }
 }
 

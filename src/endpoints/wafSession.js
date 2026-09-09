@@ -18,22 +18,14 @@ async function wafSession(data, { browser, signal, timeoutMs }) {
   return withBrowserPage(
     { browser, proxy, signal, timeoutMs },
     async (page, lifecycle) => {
-      if (proxy?.username && proxy?.password) {
-        await page.authenticate({
-          username: proxy.username,
-          password: proxy.password,
-        })
-      }
-
       const acceptLanguage = await findAcceptLanguage(page)
-      await page.setRequestInterception(true)
       return navigateForTargetResponse({
         page,
         url,
         ...lifecycle,
         extract: async response => {
-          await page.waitForNetworkIdle({ idleTime: 500, timeout: 5000 }).catch(() => {})
-          const cookies = await page.cookies()
+          await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {})
+          const cookies = await page.context().cookies()
           const headers = await response.request().headers()
           delete headers['content-type']
           delete headers['accept-encoding']

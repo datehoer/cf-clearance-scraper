@@ -14,9 +14,10 @@ function matchesTarget(candidate, target) {
         const right = new URL(target)
         const leftPath = left.pathname.replace(/\/$/, '') || '/'
         const rightPath = right.pathname.replace(/\/$/, '') || '/'
-        return left.origin === right.origin
-            && leftPath === rightPath
-            && left.search === right.search
+        // Match on origin + path only. Cloudflare's managed challenge
+        // redirects the document to the same path with a `?__cf_chl_*`
+        // query appended, so an exact search match would never fire.
+        return left.origin === right.origin && leftPath === rightPath
     } catch (_error) {
         return false
     }
@@ -39,11 +40,6 @@ function navigateForTargetResponse({ page, url, signal, on, extract }) {
             error.code = 'PAGE_CLOSED'
             finish(reject, error)
         }
-        const handleRequest = request => {
-            void Promise.resolve()
-                .then(() => request.continue())
-                .catch(error => finish(reject, error))
-        }
         const handleResponse = response => {
             if (settled || processing) return
             if (![200, 302].includes(response.status())) return
@@ -58,7 +54,6 @@ function navigateForTargetResponse({ page, url, signal, on, extract }) {
                 })
         }
 
-        on('request', handleRequest)
         on('response', handleResponse)
         on('close', handleClose)
         signal?.addEventListener('abort', handleAbort, { once: true })
@@ -67,6 +62,8 @@ function navigateForTargetResponse({ page, url, signal, on, extract }) {
             return
         }
 
+        // Playwright fires `response` events natively; no request interception
+        // is needed to observe the target document response.
         void page.goto(url, { waitUntil: 'domcontentloaded', timeout: 0 })
             .catch(error => finish(reject, error))
     })

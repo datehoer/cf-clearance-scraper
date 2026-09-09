@@ -11,15 +11,17 @@ function deferred() {
 test('removes page listeners and closes page and context after success', async () => {
     const page = {
         on: jest.fn(),
-        removeListener: jest.fn(),
+        off: jest.fn(),
         close: jest.fn().mockResolvedValue(undefined),
+        addInitScript: jest.fn().mockResolvedValue(undefined),
+        $$: jest.fn().mockResolvedValue([]),
     }
     const context = {
         newPage: jest.fn().mockResolvedValue(page),
         close: jest.fn().mockResolvedValue(undefined),
     }
     const browser = {
-        createBrowserContext: jest.fn().mockResolvedValue(context),
+        newContext: jest.fn().mockResolvedValue(context),
     }
 
     await expect(withBrowserPage(
@@ -29,7 +31,7 @@ test('removes page listeners and closes page and context after success', async (
             return 'done'
         },
     )).resolves.toBe('done')
-    expect(page.removeListener).toHaveBeenCalledWith('response', expect.any(Function))
+    expect(page.off).toHaveBeenCalledWith('response', expect.any(Function))
     expect(page.close).toHaveBeenCalledTimes(1)
     expect(context.close).toHaveBeenCalledTimes(1)
 })
@@ -38,7 +40,7 @@ test('closes a context that is acquired after timeout', async () => {
     jest.useFakeTimers()
     const creation = deferred()
     const context = { close: jest.fn().mockResolvedValue(undefined) }
-    const browser = { createBrowserContext: jest.fn(() => creation.promise) }
+    const browser = { newContext: jest.fn(() => creation.promise) }
 
     const task = withBrowserPage(
         { browser, timeoutMs: 10 },

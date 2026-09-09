@@ -1,7 +1,7 @@
 services:
   cf-clearance-scraper:
     build: .
-    image: cf-clearance-scraper:local-fixed-v2
+    image: cf-clearance-scraper:clark-v2
     container_name: cf-clearance-scraper
     restart: unless-stopped
     stop_grace_period: 20s
@@ -11,22 +11,36 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: "100m"
-        max-file: "3"
+        max-size: 100m
+        max-file: '3'
     ports:
-      - "${BIND_ADDRESS:-127.0.0.1}:3000:3000"
+    - ${BIND_ADDRESS:-127.0.0.1}:3000:3000
     environment:
-      PORT: "3000"
-      BROWSER_LIMIT: "${BROWSER_LIMIT:-5}"
-      BROWSER_TIMEOUT_MS: "${BROWSER_TIMEOUT_MS:-60000}"
-      BROWSER_START_TIMEOUT_MS: "${BROWSER_START_TIMEOUT_MS:-30000}"
-      BROWSER_MAX_START_ATTEMPTS: "${BROWSER_MAX_START_ATTEMPTS:-3}"
-      BROWSER_RETRY_DELAY_MS: "${BROWSER_RETRY_DELAY_MS:-3000}"
-      SHUTDOWN_GRACE_MS: "${SHUTDOWN_GRACE_MS:-15000}"
-      TRUST_PROXY_HOPS: "${TRUST_PROXY_HOPS:-0}"
-      CLIENT_KEY: "${CLIENT_KEY:?CLIENT_KEY must be set}"
-      AUTH_TOKEN: "${AUTH_TOKEN:-}"
-      AUDIT_HASH_KEY: "${AUDIT_HASH_KEY:-}"
-      ALLOW_UNAUTHENTICATED: "false"
-      BROWSER_HEADLESS: "${BROWSER_HEADLESS:-false}"
-      BROWSER_DISABLE_XVFB: "${BROWSER_DISABLE_XVFB:-false}"
+      PORT: '3000'
+      BROWSER_LIMIT: ${BROWSER_LIMIT:-5}
+      BROWSER_TIMEOUT_MS: ${BROWSER_TIMEOUT_MS:-60000}
+      BROWSER_START_TIMEOUT_MS: ${BROWSER_START_TIMEOUT_MS:-30000}
+      BROWSER_MAX_START_ATTEMPTS: ${BROWSER_MAX_START_ATTEMPTS:-3}
+      BROWSER_RETRY_DELAY_MS: ${BROWSER_RETRY_DELAY_MS:-3000}
+      SHUTDOWN_GRACE_MS: ${SHUTDOWN_GRACE_MS:-15000}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
+      CLIENT_KEY: ${CLIENT_KEY:?CLIENT_KEY must be set}
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+      AUDIT_HASH_KEY: ${AUDIT_HASH_KEY:-}
+      ALLOW_UNAUTHENTICATED: 'false'
+      BROWSER_HEADLESS: ${BROWSER_HEADLESS:-false}
+      BROWSER_DISABLE_XVFB: ${BROWSER_DISABLE_XVFB:-false}
+      CLARK_FINGERPRINT: ${CLARK_FINGERPRINT:-}
+      CLARK_FINGERPRINT_PLATFORM: ${CLARK_FINGERPRINT_PLATFORM:-linux}
+      CLARK_FINGERPRINT_BRAND: ${CLARK_FINGERPRINT_BRAND:-Chrome}
+      CLARK_FINGERPRINT_BRAND_VERSION: ${CLARK_FINGERPRINT_BRAND_VERSION:-148.0.0.0}
+      CLARK_FINGERPRINT_TIMEZONE: ${CLARK_FINGERPRINT_TIMEZONE:-America/New_York}
+      CLARK_FINGERPRINT_LOCALE: ${CLARK_FINGERPRINT_LOCALE:-en-US}
+      CLARK_FINGERPRINT_NETWORK_PROFILE: ${CLARK_FINGERPRINT_NETWORK_PROFILE:-residential}
+    networks:
+    - default
+    - grok-gateway
+networks:
+  grok-gateway:
+    external: true
+    name: grok2api_default
