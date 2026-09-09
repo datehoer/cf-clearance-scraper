@@ -1,17 +1,15 @@
-> [!WARNING]
-> This repo will no longer receive updates. Thank you to everyone who supported it.
-
 # CF Clearance Scraper
 
-This library was created for testing and training purposes to retrieve the page source of websites, create Cloudflare Turnstile tokens, and create Cloudflare WAF sessions.
+This library retrieves the page source of Cloudflare-protected websites, creates Cloudflare Turnstile tokens, and creates Cloudflare WAF sessions.
+
+It is powered by a fully open-source stealth stack:
+
+- **[Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright)** (Apache-2.0) — a patched, undetected Playwright driver.
+- **[clark-browser](https://github.com/clark-labs-inc/clark-browser)** (MIT) — a stealth Chromium fork with source-level fingerprint patches (the open-source alternative to CloakBrowser).
 
 Cloudflare protection not only checks cookies in the request. It also checks variables in the headers. For this reason, it is recommended to use the returned cookies and headers together when replaying requests.
 
 Cookies with `cf` in the name belong to Cloudflare. You can find out what these cookies do and how long they are valid by **[clicking here](https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/)**.
-
-## Sponsor
-
-[![ScrapeDo](src/data/sdo.gif)](https://scrape.do/?utm_source=github&utm_medium=repo_ccs)
 
 ## Installation
 
@@ -19,7 +17,7 @@ Installation with Docker is recommended.
 
 **Docker**
 
-Build the local image so the lifecycle fixes in this repository are included:
+Build the local image (the Dockerfile downloads and SHA256-verifies the clark-browser stealth Chromium binary):
 
 ```bash
 docker build -t cf-clearance-scraper:local .
@@ -49,7 +47,7 @@ CLIENT_KEY=replace_with_a_strong_random_value docker compose up -d --build
 **GitHub**
 
 ```bash
-git clone https://github.com/zfcsoftware/cf-clearance-scraper
+git clone https://github.com/datehoer/cf-clearance-scraper
 cd cf-clearance-scraper
 npm install
 npm run start
@@ -73,6 +71,14 @@ Environment variables used by the current implementation:
 | `AUTH_TOKEN` or `authToken` | Production: one auth method | unset | Shared secret for request-body auth-token validation. |
 | `AUDIT_HASH_KEY` | No | random per process | Makes pseudonymous source IDs stable across restarts. Never logged. |
 | `ALLOW_UNAUTHENTICATED` | No | `false` outside development | Explicitly permits startup without either auth method. |
+| `BROWSER_HEADLESS` | No | `false` | Run the browser headless. Headed mode (with Xvfb) is required for Cloudflare managed challenges. |
+| `CLARK_FINGERPRINT` | No | random | clark-browser master fingerprint seed. Omit for a fresh identity per launch. |
+| `CLARK_FINGERPRINT_PLATFORM` | No | `linux` | Spoofed OS platform (`windows`/`macos`/`linux`). |
+| `CLARK_FINGERPRINT_BRAND` | No | `Chrome` | UA Client Hints browser brand. |
+| `CLARK_FINGERPRINT_BRAND_VERSION` | No | `148.0.0.0` | UA Client Hints brand version. |
+| `CLARK_FINGERPRINT_TIMEZONE` | No | `America/New_York` | Spoofed timezone. Align with your proxy's geography. |
+| `CLARK_FINGERPRINT_LOCALE` | No | `en-US` | Spoofed locale. |
+| `CLARK_FINGERPRINT_NETWORK_PROFILE` | No | `residential` | Network quality profile (`desktop`/`datacenter`/`residential`/`mobile`/`slow`). |
 
 ## API Overview
 
@@ -286,8 +292,9 @@ the service is reachable exclusively through trusted proxies.
 - The service keeps one global browser instance and creates a new isolated browser context per request.
 - `turnstile-min` requires `siteKey`; the request schema enforces it.
 - If browser startup is still in progress, requests return `503`.
-- Proxy credentials are applied with `page.authenticate()` when both `proxy.username` and `proxy.password` are provided.
+- Proxy credentials are applied at the browser context level when both `proxy.username` and `proxy.password` are provided.
 - Every request closes its Page and BrowserContext in a bounded cleanup path, including timeout and client-cancellation cases.
+- The browser engine is clark-browser (stealth Chromium) driven through Patchright. The `CLARK_FINGERPRINT_*` environment variables control the browser persona; keep them coherent (platform, timezone, locale, network profile) to avoid detection.
 
 ## Quick Questions and Answers
 
